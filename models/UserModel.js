@@ -9,19 +9,19 @@ const config = require('../config/config');
 
 /*******************
  *  Register
- *  @param: userData = {id, pw, nickname}
+ *  @param: userData = {email, pw, nickname}
  ********************/
 exports.register = (userData) => {
   return new Promise((resolve, reject) => {
-      const sql = "SELECT user_id FROM user WHERE user_id = ?";
+      const sql = "SELECT email FROM users WHERE email = ?";
 
-      pool.query(sql, [userData.id], (err, rows) => {  // 아이디 중복 체크
+      pool.query(sql, [userData.email], (err, rows) => {  // 아이디 중복 체크
         if (err) {
           reject(err);
         } else {
           if (rows.length !== 0) {  // 이미 아이디 존재
             reject(1401);
-          }else{
+          } else {
             resolve(null);
           }
         }
@@ -30,11 +30,11 @@ exports.register = (userData) => {
   ).then(() => {
       return new Promise((resolve, reject) => {
         const sql =
-          "INSERT INTO user(user_id, user_pw, user_nickname, user_email) " +
+          "INSERT INTO users(email, pw, nickname, image) " +
           "VALUES (?, ?, ?, ?) ";
 
 
-        pool.query(sql, [userData.id, userData.pw, userData.nickname, userData.email], (err, rows) => {  // 가입 시도
+        pool.query(sql, [userData.email, userData.pw, userData.nickname, userData.image], (err, rows) => {  // 가입 시도
           if (err) {
             reject(err);
           } else {
@@ -51,9 +51,9 @@ exports.register = (userData) => {
   ).then((result) => {
     return new Promise((resolve, reject) => {
       const sql =
-        "SELECT user_idx, user_id, user_nickname, user_email, user_created " +
-        "FROM user " +
-        "WHERE user_idx = ?";
+        "SELECT idx, email, nickname, created, image " +
+        "FROM users " +
+        "WHERE idx = ?";
 
       pool.query(sql, result.insertId, (err, rows) => {
         if (err) {
@@ -66,73 +66,65 @@ exports.register = (userData) => {
   });
 };
 
-
-exports.fbRegister = (userData) => {
+exports.duplicates = (userData) => {
   return new Promise((resolve, reject) => {
-      const sql = "SELECT user_id FROM user WHERE user_id = ?";
-
-      pool.query(sql, [userData.id], (err, rows) => {  // 아이디 중복 체크
+    var flag = userData.flag;
+    if (flag == 1) {
+      if (!userData.nickname) {
+        reject(400);
+      }
+      var nickname = userData.nickname;
+      const sql = "select nickname from users where nickname = ?";
+      pool.query(sql, nickname, (err, rows) => {
         if (err) {
           reject(err);
-        } else {
-          if (rows.length !== 0) {  // 이미 아이디 존재
+        }
+        else {
+          if (rows.length === 0) { //중복된 필명 없음
+            resolve(rows);
+          }
+          else {
+            reject(1400);
+          }
+        }
+      });
+    }
+    else if (flag == 2) {
+      if (!userData.email) {
+        reject(400);
+      }
+      var email = userData.email;
+      const sql = "select email from users where email = ?";
+      pool.query(sql, email, (err, rows) => {
+        if (err) {
+          reject(err);
+        }
+        else {
+          if (rows.length === 0) {
+            resolve(rows);
+          }
+          else {
             reject(1401);
-          }else{
-            resolve(null);
           }
         }
       });
     }
-  ).then(() => {
-      return new Promise((resolve, reject) => {
-        const sql =
-          "INSERT INTO user(user_id, user_nickname) " +
-          "VALUES (?, ?) ";
 
-
-        pool.query(sql, [userData.id, userData.name], (err, rows) => {  // 가입 시도
-          if (err) {
-            reject(err);
-          } else {
-            if (rows.affectedRows === 1) {
-              resolve(rows);
-            } else {
-              const _err = new Error("User Register Custom error");
-              reject(_err);
-            }
-          }
-        });
-      });
-    }
-  ).then((result) => {
-    return new Promise((resolve, reject) => {
-      const sql =
-        "SELECT user_idx, user_id, user_nickname, user_created " +
-        "FROM user " +
-        "WHERE user_idx = ?";
-
-      pool.query(sql, result.insertId, (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(rows[0]);
-        }
-      });
-    });
   });
 };
 
+
 exports.check = (userData) => {
   return new Promise((resolve, reject) => {
-    const sql = 'SELECT user_id FROM user WHERE user_id =?';
+    const sql = 'SELECT email FROM users WHERE email =?';
 
     pool.query(sql, userData, (err, rows) => {
-      if (err){
+      if (err) {
         reject(err);
       } else {
-        if (rows.length !==0) {
+        if (rows.length !== 0) {
           reject(1401)
-        } else{
+        } else {
           resolve(rows);
         }
       }
@@ -146,9 +138,9 @@ exports.check = (userData) => {
  ********************/
 exports.login = (userData) => {
   return new Promise((resolve, reject) => {
-      const sql = "SELECT user_id FROM user WHERE user_id = ?";
+      const sql = "SELECT email FROM users WHERE email = ?";
 
-      pool.query(sql, [userData.id], (err, rows) => {  // 아이디 존재 검사
+      pool.query(sql, [userData.email], (err, rows) => {  // 아이디 존재 검사
         if (err) {
           reject(err);
         } else {
@@ -163,11 +155,11 @@ exports.login = (userData) => {
   ).then(() => {
     return new Promise((resolve, reject) => {
       const sql =
-        "SELECT user_id, user_nickname " +
-        "FROM user " +
-        "WHERE user_id = ? and user_pw = ?";
+        "SELECT email, nickname, idx, image AS profile ,description " +
+        "FROM users " +
+        "WHERE email = ? and pw = ?";
 
-      pool.query(sql, [userData.id, userData.pw], (err, rows) => {
+      pool.query(sql, [userData.email, userData.pw], (err, rows) => {
         if (err) {
           reject(err);
         } else {
@@ -175,8 +167,11 @@ exports.login = (userData) => {
             reject(1403);
           } else {
             const profile = {
-              id: rows[0].user_id,
-              nickname: rows[0].user_nickname
+              email: rows[0].email,
+              nickname: rows[0].nickname,
+              profile: rows[0].profile,
+              idx: rows[0].idx,
+              description: rows[0].description
             };
             const token = jwt.sign(profile, config.jwt.cert, {'expiresIn': "10h"});
 
@@ -189,65 +184,36 @@ exports.login = (userData) => {
         }
       });
     });
-  });
-};
-
-exports.fbLogin = (userData) => {
-  return new Promise((resolve, reject) => {
-      const sql = "SELECT user_id FROM user WHERE user_id = ?";
-
-      pool.query(sql, [userData.id], (err, rows) => {  // 아이디 존재 검사
-        if (err) {
-          reject(err);
-        } else {
-          if (rows.length === 0) {  // 아이디 없음
-            reject(1402);
+  })
+    .then((result)=> {
+      return new Promise((resolve,  reject) =>{
+        const sql = "UPDATE users SET token = ? WHERE idx = ?";
+        pool.query(sql,[userData.token, result.profile.idx], (err,rows) =>{
+          if(err){
+            reject(err);
           } else {
-            resolve(null);
-          }
-        }
-      });
-    }
-  ).then(() => {
-    return new Promise((resolve, reject) => {
-      const sql =
-        "SELECT user_id, user_nickname " +
-        "FROM user " +
-        "WHERE user_id = ?";
-
-      pool.query(sql, [userData.id], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          if (rows.length === 0) {  // 비밀번호 틀림
-            reject(1403);
-          } else {
-            const profile = {
-              id: rows[0].user_id,
-              nickname: rows[0].user_nickname
-            };
-            const token = jwt.sign(profile, config.jwt.cert, {'expiresIn': "10h"});
-
-            const result = {
-              profile,
-              token
-            };
             resolve(result);
           }
-        }
-      });
-    });
-  });
-
+        })
+      })
+    })
 };
 
 
 exports.profile = (userData) => {
-  return new Promise((resolve, reject) =>{
+  return new Promise((resolve, reject) => {
     const sql =
-      "SELECT user_idx, user_id, user_nickname, user_created " +
-      "FROM user " +
-      "WHERE user_idx = ?";
+      `
+      SELECT
+        idx,
+        nickname,
+        description,
+        image,
+        doodle_count,
+        scrap_count
+      FROM users
+      WHERE idx = ?
+      `;
 
     pool.query(sql, userData, (err, rows) => {
       if (err) {
@@ -264,36 +230,36 @@ exports.profile = (userData) => {
  *  @param editData = {user_idx, content}}
  ********************/
 exports.edit = (editData) => {
- return new Promise((resolve, reject) => {
-    const sql = "UPDATE user SET user_nickname=? WHERE user_idx=?";
+  return new Promise((resolve, reject) => {
+      const sql = "UPDATE users SET nickname=? WHERE idx=?";
 
-     pool.query(sql, [editData.nickname, editData.user_idx], (err, rows) => {
-       if (err) {
-         reject(err);
-       } else {
-         if (rows.affectedRows === 1) {
-           resolve(editData.user_idx);
-         } else {
-           const _err = new Error("User Edit error");
-           reject(_err);
-         }
-       }
-     });
-   }
- ).then((data) => {
-     return new Promise((resolve, reject) => {
-       const sql = "SELECT * FROM user WHERE user_idx=?";
+      pool.query(sql, [editData.nickname, editData.idx], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          if (rows.affectedRows === 1) {
+            resolve(editData.user_idx);
+          } else {
+            const _err = new Error("User Edit error");
+            reject(_err);
+          }
+        }
+      });
+    }
+  ).then((data) => {
+      return new Promise((resolve, reject) => {
+        const sql = "SELECT * FROM users WHERE idx=?";
 
-       pool.query(sql, data, (err, rows) => {
-         if (err) {
-           reject(err);
-         } else {
-           resolve(rows);
-         }
-       });
-     });
-   }
- );
+        pool.query(sql, data, (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows);
+          }
+        });
+      });
+    }
+  );
 };
 
 /*******************
@@ -301,8 +267,8 @@ exports.edit = (editData) => {
  *  @param data = user_idx
  ********************/
 exports.delUser = (data) => {
-  return new Promise((resolve, reject) =>{
-    const sql = "DELETE FROM user WHERE user_idx=?";
+  return new Promise((resolve, reject) => {
+    const sql = "DELETE FROM users WHERE idx=?";
 
     pool.query(sql, data, (err, rows) => {
       if (err) {
@@ -329,19 +295,19 @@ exports.findID = (data) => {
   return new Promise((resolve, reject) => {
     const sql =
       `
-      SELECT user_id
-      FROM user
-      WHERE user_nickname = ? AND user_email = ?
+      SELECT email
+      FROM users
+      WHERE nickname = ? AND email = ?
       `;
     pool.query(sql, [data.name, data.email], (err, rows) => {
-      if (err){
+      if (err) {
         reject(err)
       } else {
-          if(rows.length ===0){
-            reject(1402)
-          } else{
-            resolve(rows)
-          }
+        if (rows.length === 0) {
+          reject(1402)
+        } else {
+          resolve(rows)
+        }
       }
     });
   });
@@ -363,7 +329,7 @@ exports.findPW = (data) => {
       WHERE user_id = ? AND user_email = ?
       `;
     pool.query(sql, [data.id, data.email], (err, rows) => {
-      if (err){
+      if (err) {
         reject(err);
       } else {
         if (rows.length === 0) { // 일치하는 값이 없는 경우
@@ -382,7 +348,7 @@ exports.findPW = (data) => {
         WHERE user_email = ?
         `;
       pool.query(sql, [data.secretNum, result], (err, rows) => {
-        if(err){
+        if (err) {
           reject(err)
         } else {
           resolve(result)
@@ -402,10 +368,10 @@ exports.confirmPW = (data) => {
       `;
 
     pool.query(sql, [data.secretNum], (err, rows) => {
-      if(err){
+      if (err) {
         reject(err);
       } else {
-        if(rows.length === 0){ // 인증번호가 다른경우
+        if (rows.length === 0) { // 인증번호가 다른경우
           reject(9401);
         } else {
           resolve(rows[0]);
@@ -414,7 +380,6 @@ exports.confirmPW = (data) => {
     });
   });
 };
-
 
 
 /***********
@@ -455,3 +420,105 @@ exports.editPW = (data) => {
     });
   });
 };
+
+
+/*********
+ * 필명 검색
+ * @param data
+ * @returns {Promise}
+ */
+exports.search = (data) => {
+  return new Promise((resolve, reject) => {
+    const sql =
+      `
+      SELECT 
+        nickname, 
+        description,
+        image,
+        idx
+      FROM users
+      WHERE nickname REGEXP ?
+      ORDER BY users.doodle_count DESC
+      `;
+
+    pool.query(sql, data, (err, rows) => {
+      if(err){
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+};
+
+exports.other_user = (user_idx) => {
+  return new Promise((resolve, reject) => {
+    const sql =
+      "SELECT " +
+      "  users.nickname, " +
+      "  users.image AS profile, " +
+      "  users.description, " +
+      "  users.scrap_count, " +
+      "  users.doodle_count " +
+      "FROM users " +
+      "WHERE idx = ? ";
+    pool.query(sql, user_idx, (err,rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows[0]);
+      }
+    });
+
+  });
+};
+
+exports.other_doodle = (user_idx) => {
+  return new Promise((resolve, reject) => {
+    const sql =
+      "SELECT " +
+      "  doodle.*, " +
+      "  scraps.doodle_idx AS scraps, " +
+      "  `like`.doodle_idx AS `like`, " +
+      '  date_format(convert_tz(doodle.created, "+00:00", "+00:00"), "%Y년 %m월 %d일") AS created ' +
+      "FROM doodle " +
+      "  LEFT JOIN scraps ON doodle.idx = scraps.doodle_idx && scraps.user_idx = ? " +
+      "  LEFT JOIN `like` ON doodle.idx = `like`.doodle_idx && `like`.user_idx = ? " +
+      "WHERE doodle.user_idx = ? " +
+      "ORDER BY doodle.created DESC ";
+    const data = [user_idx,user_idx,user_idx];
+    pool.query(sql, data, (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+
+  });
+};
+
+exports.modify = (modifyData) => {
+  return new Promise((resolve, reject) => {
+    let sql = '';
+    let dataArray = [];
+    console.log(modifyData);
+    if(modifyData.flag === 1){
+      sql = 'UPDATE users SET description = ? WHERE idx = ?';
+      dataArray = [modifyData.description, modifyData.userIdx];
+    } else if(modifyData.flag === 2){
+      sql = 'UPDATE users SET image = ?, description = ? WHERE idx = ?';
+      dataArray = [modifyData.image, modifyData.description, modifyData.userIdx];
+    } else if(modifyData.flag === 3){
+      sql = 'UPDATE users SET image = ?, description = ? WHERE idx = ?';
+      dataArray = [null, modifyData.description, modifyData.userIdx];
+    }
+    pool.query(sql, dataArray, (err,rows) => {
+      if(err) {
+        reject (err);
+      } else {
+        resolve();
+      }
+    })
+  })
+}

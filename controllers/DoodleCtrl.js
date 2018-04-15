@@ -4,67 +4,61 @@ const nodemailer = require('nodemailer');
 const config = require('../config/config');
 const resMsg = require('../errors.json');
 
-const userModel = require('../models/UserModel');
+const doodleModel = require('../models/DoodleModel');
+const scrapModel = require('../models/ScrapModel');
 
 
 /*******************
- *  Register
- ********************/
-exports.register = async (req, res, next) => {
+ *  request doodle
+ *  @body: {flag}
+  ********************/
+exports.allDoodle = async (req, res, next) => {
 
-  //TODO pw, image validation
-  let pw;
-  if (req.body.pw1 !== req.body.pw2) {
-    return res.status(400).json(resMsg[1404])
-  } else {
-    pw = req.body.pw1
+  if (!req.body.flag) {
+    return res.status(400).end();
   }
-
-
-
-  //TODO s3 dest 설정
-  let image;
-  if (!req.file) { // 이미지가 없는 경우
-    image = null;
-  } else {
-    image = req.file.location;
-  }
-
   let result = '';
+  let flag = parseInt(req.body.flag);
+
+  const doodleData = {
+    flag: flag,
+    user_idx: req.userIdx
+  };
   try {
-    const userData = {
-      email: req.body.email,
-      pw: config.do_cipher(pw),
-      nickname: req.body.nickname,
-      image: image
-    };
-
-    result = await userModel.register(userData);
-
+    if (flag === 3) {
+      result = await doodleModel.myDoodle(doodleData);
+    } else if (flag === 4) {
+      result = await scrapModel.read(doodleData);
+    } else {
+      result = await doodleModel.allDoodle(doodleData);
+    }
   } catch (error) {
-    console.log(error);
-    return next(error)
-  }
-
-  return res.r(result[0]);
-};
-
-exports.duplicates = async(req, res, next) => {
-  let result = '';
-
-  try {
-    const userData = {
-      email : req.body.email,
-      nickname : req.body.nickname,
-      flag : req.body.flag
-    };
-    result = await userModel.duplicates(userData);
-  }
-  catch (error) {
-    console.log(error);
     return next(error);
   }
+  return res.r(result);
+};
 
+/*******************
+ *  request doodle
+ *  @params: {idx}
+ ********************/
+exports.other = async (req, res, next) => {
+
+  if (!req.params.idx) {
+    return res.status(400).end();
+  }
+  let result = '';
+  let idx = parseInt(req.params.idx);
+
+  const doodleData = {
+    idx: idx,
+    user_idx: req.userIdx
+  };
+  try {
+    result = await doodleModel.other(doodleData);
+  } catch (error) {
+    return next(error);
+  }
   return res.r(result);
 };
 
@@ -72,14 +66,10 @@ exports.duplicates = async(req, res, next) => {
 exports.check = async (req, res, next) => {
   let result = '';
   try {
-    const userData = req.body.email;
+    const userData = req.body.id;
     result = await userModel.check(userData);
   } catch (error) {
-    if (isNaN(error)) {
-      return res.status(500).json(resMsg[9500]);
-    } else {
-      return res.status(409).json(resMsg[1401]);
-    }
+    return next(error);
   }
 
   // FIXME 리턴값 수정하기
@@ -92,7 +82,7 @@ exports.check = async (req, res, next) => {
  ********************/
 exports.login = async (req, res, next) => {
 
-  if (!req.body.email || !req.body.pw) {
+  if (!req.body.id || !req.body.pw) {
     return res.status(400).end();
   }
 
@@ -100,9 +90,8 @@ exports.login = async (req, res, next) => {
 
   try {
     const userData = {
-      email: req.body.email,
-      pw: config.do_cipher(req.body.pw),
-      token: req.body.token ? req.body.token : 'token'
+      id: req.body.id,
+      pw: config.do_cipher(req.body.pw)
     };
 
     result = await userModel.login(userData);
@@ -119,29 +108,64 @@ exports.login = async (req, res, next) => {
   return res.r(result);
 };
 
-/******
- * 닉네임수정
- * @param idx
- */
+exports.fbLogin = async (req, res, next) => {
+  const data = {
+    access_token: req.body.access_token
+  };
+
+  let userData = {};
+  let result = '';
+  const uri = {
+    method: 'GET',
+    uri: 'https://graph.facebook.com/v2.10/me?access_token=' + data.access_token + '&fileds=id,name'
+  };
+
+  function option(error, response, body) {
+    if (error) {
+      throw error;
+    }
+
+    userData = JSON.parse(body);
+
+    cb(userData);
+  }
+
+  async function cb(data) {
+
+    try {
+      userData.id = data.id;
+      userData.name = data.name;
+
+      result = await userModel.fbLogin(userData);
+
+
+    } catch (error) {
+      console.log(error);
+      return next(error);
+    }
+
+    return res.r(result)
+
+  }
+
+  request(uri, option, cb);
+
+};
+
+
 exports.profile = async (req, res, next) => {
   let result = '';
   try {
-    let userData;
-    // if(parseInt(req.params.idx) === 0)
-      userData = req.userIdx;
-    // else
-    //   userData = parseInt(req.params.idx);
+    const userData = req.user_idx;
 
-    result = await userModel.profile(userData);
-
+    result = await userModel.profile(userData)
 
   } catch (error) {
     console.log(error);
     return next(error)
   }
-  return res.r(result);
+  return res.json(result);
 };
-
 
 /******
  * 닉네임수정
@@ -152,7 +176,7 @@ exports.edit = async (req, res, next) => {
   try {
 
     const editData = {
-      idx: req.user_idx,
+      user_idx: req.user_idx,
       nickname: req.body.nickname
     };
 
@@ -211,8 +235,6 @@ exports.findID = async (req, res, next) => {
 
 
 /************
- * TODO 비밀번호를 찾기위한 조건 추가
- * 17.12.31 조건 부족
  * PW 찾기 -> (ID && EAMIL) 일치하는 값이 있는경우
  * 임시비번으로 변경뒤 이메일 전송
  * @param req
@@ -253,8 +275,7 @@ exports.findPW = async (req, res, next) => {
     transporter.sendMail(mailOptions, (err, info) => {
       if (err) {
         console.log(err);
-      }
-      else {
+      } else {
         console.log('Email sent! : ' + info.response);
       }
       transporter.close();
@@ -269,7 +290,7 @@ exports.findPW = async (req, res, next) => {
   return res.r(result);
 };
 
-/**********
+/**********8
  * 인증번호 확인
  * 인증번호 불일치시 파라미터 불일치 메세지 전송
  * @param req
@@ -292,70 +313,27 @@ exports.confirmPW = async (req, res, next) => {
   }
 
   return res.r(result);
+  // FIXME 리턴값 수정하기
+  // return res.status(200).json(result);
+
 };
 
 
 /*********
- * 비밀번호 변경
+ * 글귀 검색
  * @param req
  * @param res
  * @param next
  * @returns {Promise.<*>}
  */
-
-exports.editPW = async (req, res, next) => {
-
-  let result;
-  let pw;
-  if (req.body.pw1 !== req.body.pw2) {
-    return res.status(400).json(resMsg[1404])
-  } else {
-    pw = req.body.pw1
-  }
-
-  try {
-    const data = {
-      pw: config.do_cipher(pw),
-      id: req.body.id,
-      email: req.body.email
-    };
-    result = await userModel.editPW(data);
-
-  } catch (error) {
-    console.log(error);
-    return next(error);
-  }
-
-  return res.r(result);
-};
-
-
-
 exports.search = async(req, res, next) => {
-  let result;
+  let result = '';
 
   try{
     const data = req.params.keyword;
 
-    result = await userModel.search(data);
-
-  } catch (error){
-    return next(error);
-  }
-
-  return res.r(result);
-};
-
-exports.other = async(req, res, next) => {
-  let result = {};
-
-  try{
-    const user_idx = parseInt(req.params.idx);
-
-    result.user = await userModel.other_user(user_idx);
-    result.doodle = await userModel.other_doodle(user_idx);
-
-  } catch (error){
+    result = await doodleModel.search(data);
+  }catch (error){
     return next(error);
   }
 
@@ -364,29 +342,35 @@ exports.other = async(req, res, next) => {
 
 
 /*********
- * 사진, 설명 변경
- * @body image, flag, description
+ * 글귀 삭제
+ * @param idx
  */
-
-
-exports.modify = async(req, res, next) => {
+exports.delete = async(req, res, next) => {
   let result = '';
-  let image;
-  console.log(req.body);
-  if (!req.file) { // 이미지가 없는 경우
-    image = null;
-  } else {
-    image = req.file.location;
-  }
-  try {
-    const modifyData = {
-      image: image,
-      description: req.body.description,
-      flag: parseInt(req.body.flag),
+
+  try{
+    const data = {
+      idx : req.params.idx,
       userIdx : req.userIdx
     }
-    result = await userModel.modify(modifyData);
-  } catch(error){
+
+    result = await doodleModel.delete(data);
+  }catch (error){
+    return next(error);
+  }
+
+  return res.r(result);
+};
+
+exports.get = async(req, res, next) => {
+  let result = '';
+  try {
+    const data = {
+      userIdx: req.userIdx,
+      idx:req.params.idx
+    };
+    result = await  doodleModel.get(data);
+  } catch(error) {
     return next(error);
   }
   return res.r(result);
